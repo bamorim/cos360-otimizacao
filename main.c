@@ -3,9 +3,29 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_linalg.h>
 #include <gsl/gsl_cblas.h>
-#define EPSILON 1e-100
-#define AUREA_EPSILON 1e-5
+#define EPSILON 1e-10
+#define AUREA_EPSILON 1e-3
 #define AUREA_RO 1e-2
+#define ITER_MAX 10000
+
+
+#ifdef DEBUG
+#define debug(a) printf a
+#else
+#define debug(a) (0)
+#endif
+
+inline void printm(double * mat, int m, int n) {
+  #ifdef DEBUG
+  for (int i = 0; i < m; i++){
+    for (int j = 0; j < n; j++){
+      printf("%g ", mat[i*m+j]);
+    }
+    printf("\n");
+  }
+  printf("\n\n");
+  #endif
+}
 
 // Gradientes
 void gf(double * x, double * g){
@@ -57,21 +77,20 @@ void invert(double * im, double * om){
   }
 }
 
-inline double lanterna_verde(double * xv, double * d, double x) {
-  return f(xv[0] + x*d[0], xv[1] + x*d[1]);
+inline double lanterna_verde(double * xv, double * d, double t) {
+  return f(xv[0] + t*d[0], xv[1] + t*d[1]);
 }
 
 double aurea(double * x, double * d){
   double r = sqrt( pow(d[0],2) + pow(d[1],2) );
-  double ud[2] = {
-    d[0]/r,
-    d[1]/r
-  };
   double a = 0, s = AUREA_RO, b = 2*s;
   double t1 = (sqrt(5) - 1)/2;
   double t2 = 1 - t1;
 
   while ( lanterna_verde(x,d,a) < lanterna_verde(x,d,b) ){
+    // We are on the crescent side already
+    if(b > 100)
+      return 0;
     a = s;
     s = b;
     b = 2*b;
@@ -79,6 +98,7 @@ double aurea(double * x, double * d){
 
   double u = a + t1*(b-a);
   double v = a + t2*(b-a);
+
   while (b-a > AUREA_EPSILON) {
     if(lanterna_verde(x,d,u) < lanterna_verde(x,d,v)) {
       b = v;
@@ -95,15 +115,22 @@ double aurea(double * x, double * d){
 }
 
 // Métodos
-void grad_method(double * x){
+long grad_method(double * x){
+
+  long iter = 0;
   // g = Gradiente
   double g[2] = {0,0};
   double t = 0;
   while(1){
+    iter++;
     gf(x,g);
+    debug(("g:\n"));
+    printm(g,1,2);
+    debug(("X:\n"));
+    printm(x,1,2);
 
-    if(fabs(g[0]) < EPSILON && fabs(g[1]) < EPSILON)
-      return;
+    if(fabs(g[0]) < EPSILON && fabs(g[1]) < EPSILON || iter > ITER_MAX)
+      return iter;
 
     // get t
     g[0] = - g[0];
@@ -116,17 +143,8 @@ void grad_method(double * x){
   }
 }
 
-void printm(double * mat, int m, int n) {
-  for (int i = 0; i < m; i++){
-      for (int j = 0; j < n; j++){
-      printf("%g ", mat[i*m+j]);
-    }
-    printf("\n");
-  }
-  printf("\n\n");
-}
-
-void newt_method(double * x){
+long newt_method(double * x){
+  long iter = 0;
   double g[2] = {0,0};
   double gg[4] = { 0, 0,
                    0, 0 };
@@ -134,10 +152,11 @@ void newt_method(double * x){
   double d[2] = {0,0};
   double t;
   while(1){
+    iter++;
     gf(x,g);
 
-    if(fabs(g[0]) < EPSILON && fabs(g[1]) < EPSILON)
-      return;
+    if(fabs(g[0]) < EPSILON && fabs(g[1]) < EPSILON || iter > ITER_MAX)
+      return iter;
 
     ggf(x,gg);
     invert(gg,gg);
@@ -152,9 +171,12 @@ void newt_method(double * x){
   }
 }
 
-void run(void (*runner)(double * x)){
-  double x[2] = {0.4,0.4};
-  runner(x);
+void run(long (*runner)(double * x)){
+  double x[2] = {0.01,0.01};
+  printf("x0 = (%.10e,%.10e)\n", x[0], x[1]);
+  printf("f(x0) = (%.10e)\n", f(x[0], x[1]));
+  long iter = runner(x);
+  printf("iter = %d\n", iter);
   printf("x* = (%.10e,%.10e)\n", x[0], x[1]);
   printf("f(x*) = (%.10e)\n", f(x[0], x[1]));
 }
@@ -163,7 +185,7 @@ int main(){
 
   printf("Gradiente\n");
   run(grad_method);
-  printf("Newton\n");
+  printf("\n\nNewton\n");
   run(newt_method);
 
   return 0;
